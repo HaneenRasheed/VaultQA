@@ -141,17 +141,6 @@ documind/
 - Answer quality depends on the local model size and hardware
 - Rebuilding re-embeds all documents (no incremental indexing yet)
 
-## Roadmap
-
-- [ ] Conversation memory with query rewriting
-- [ ] Similarity threshold to skip the LLM when nothing relevant is found
-- [ ] Hybrid search (BM25 + vectors) and cross-encoder reranking
-- [ ] Evaluation tab with a question set and retrieval hit-rate metrics
-- [ ] Support for `.txt`, `.md`, `.docx`, and web pages
-- [ ] Incremental indexing and a document manager
-- [ ] Docker Compose setup (Streamlit + Ollama)
-
-
 ## Privacy
 
 All processing happens locally. Documents, embeddings, and questions are never sent to external services. Do not commit private documents or their indexes to a public repository (see `.gitignore`).
