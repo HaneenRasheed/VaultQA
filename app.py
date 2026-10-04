@@ -1,4 +1,5 @@
 import os
+import time
 import streamlit as st
 from rag import (
     DATA_DIR, list_ollama_models, split_models,
@@ -40,17 +41,42 @@ with st.sidebar:
 
     st.divider()
     st.subheader("📄 Documents")
-    uploads = st.file_uploader("Add PDFs", type="pdf", accept_multiple_files=True)
+
+    # this key resets the uploader after each save
+    if "uploader_key" not in st.session_state:
+        st.session_state.uploader_key = 0
+
+    uploads = st.file_uploader(
+        "Add PDFs", type="pdf", accept_multiple_files=True,
+        key=f"uploader_{st.session_state.uploader_key}",
+    )
     if uploads:
         os.makedirs(DATA_DIR, exist_ok=True)
         for f in uploads:
             with open(os.path.join(DATA_DIR, f.name), "wb") as out:
                 out.write(f.getbuffer())
-        st.success(f"Saved {len(uploads)} file(s). Rebuild the index to include them.")
+        st.session_state.uploader_key += 1
+        st.session_state.upload_msg = (
+            f"Saved {len(uploads)} file(s). Rebuild the index to include them."
+        )
+        st.rerun()
 
-    pdf_count = len([f for f in os.listdir(DATA_DIR) if f.lower().endswith(".pdf")]) \
-        if os.path.isdir(DATA_DIR) else 0
-    st.caption(f"{pdf_count} PDF(s) in `{DATA_DIR}/`")
+    if "upload_msg" in st.session_state:
+        st.success(st.session_state.pop("upload_msg"))
+
+    os.makedirs(DATA_DIR, exist_ok=True)
+    pdf_files = sorted(f for f in os.listdir(DATA_DIR) if f.lower().endswith(".pdf"))
+    st.caption(f"{len(pdf_files)} PDF(s) in `{DATA_DIR}/`")
+
+    with st.expander("Manage files"):
+        if not pdf_files:
+            st.caption("No PDFs yet.")
+        for f in pdf_files:
+            c1, c2 = st.columns([4, 1])
+            c1.caption(f)
+            if c2.button("🗑️", key=f"del_{f}"):
+                os.remove(os.path.join(DATA_DIR, f))
+                st.rerun()
 
     has_index = index_exists(embed_model)
     st.caption("Index: Ready ✅" if has_index else "Index: ❌ not built for this embedding model")
@@ -91,8 +117,11 @@ if question := st.chat_input("Ask a question about the documents"):
 
     with st.chat_message("assistant"):
         try:
+            t0 = time.time()
             stream, sources = ask(question, db, llm_model, k, temperature, num_ctx)
             answer = st.write_stream(stream)
+            elapsed = time.time() - t0
+            st.caption(f"⏱ {elapsed:.1f}s · {llm_model}")
             with st.expander("Sources"):
                 for s in sources:
                     page = s.metadata.get("page", 0) + 1
