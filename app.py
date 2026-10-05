@@ -3,7 +3,7 @@ import time
 import streamlit as st
 from rag import (
     DATA_DIR, list_ollama_models, split_models,
-    index_exists, build_index, load_index, ask,
+    index_exists, index_is_stale, build_index, load_index, ask,
 )
 
 st.set_page_config(page_title="VaultQA", page_icon="", layout="wide")
@@ -38,6 +38,13 @@ with st.sidebar:
     k = st.slider("Chunks to retrieve (k)", 1, 8, 3)
     temperature = st.slider("Temperature", 0.0, 1.0, 0.0, 0.1)
     num_ctx = st.select_slider("Context window", [2048, 4096, 8192, 16384], value=8192)
+
+    max_distance = st.slider(
+        "Relevance cutoff (lower = stricter)", 0.3, 2.0, 1.0, 0.05,
+        help="Chunks farther than this from the question are ignored. "
+             "If nothing passes, the app says it couldn't find an answer.",
+    )
+
 
     st.divider()
     st.subheader("📄 Documents")
@@ -79,7 +86,13 @@ with st.sidebar:
                 st.rerun()
 
     has_index = index_exists(embed_model)
-    st.caption("Index: Ready ✅" if has_index else "Index: ❌ not built for this embedding model")
+    stale = has_index and index_is_stale(embed_model)
+    if not has_index:
+        st.caption("Index: ❌ not built for this embedding model")
+    elif stale:
+        st.caption("Index: ⚠️ out of date")
+    else:
+        st.caption("Index: ✅ ready")
 
     if st.button("🔄 Build / rebuild index", use_container_width=True):
         try:
@@ -100,6 +113,10 @@ if not index_exists(embed_model):
     st.info(f"No index for **{embed_model}** yet. Click **Build / rebuild index** in the sidebar.")
     st.stop()
 
+if stale:
+    st.warning("Your documents changed since this index was built. "
+               "Click **Build / rebuild index** so answers use the latest files.")    
+
 db = get_db(embed_model)
 st.caption(f"Chat: `{llm_model}` · Embeddings: `{embed_model}` · k={k}")
 
@@ -118,14 +135,18 @@ if question := st.chat_input("Ask a question about the documents"):
     with st.chat_message("assistant"):
         try:
             t0 = time.time()
-            stream, sources = ask(question, db, llm_model, k, temperature, num_ctx)
+            stream, sources = ask(question, db, llm_model, k, temperature, num_ctx, max_distance)
             answer = st.write_stream(stream)
             elapsed = time.time() - t0
             st.caption(f"⏱ {elapsed:.1f}s · {llm_model}")
             with st.expander("Sources"):
                 for s in sources:
                     page = s.metadata.get("page", 0) + 1
-                    st.caption(f"{s.metadata.get('source')} (page {page})")
+                    label = f"{s.metadata.get('source')} (page {page})"
+                    score = s.metadata.get("score")
+                    if score is not None:
+                        label += f" · distance {score:.2f}"
+                    st.caption(label)
                     st.text(s.page_content[:300] + "...")
         except Exception as e:
             answer = f"Error: {e}"
