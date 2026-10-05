@@ -32,6 +32,7 @@ User question → Query embedding → Similarity search → Top-k chunks
 5. **Retrieve**: the question is embedded and the top-k most similar chunks are fetched.
 6. **Generate**: the chunks and question are sent to the selected chat model with a strict "answer only from context" prompt.
 7. **Respond**: the answer streams into the UI along with its sources.
+8. **Chat memory**: follow-up questions are rewritten into standalone queries before retrieval.
 
 ## Tech stack
 
@@ -137,7 +138,6 @@ documind/
 ## Limitations
 
 - PDF only, and no OCR for scanned documents
-- No conversation memory: each question is answered independently
 - Answer quality depends on the local model size and hardware
 - Rebuilding re-embeds all documents (no incremental indexing yet)
 

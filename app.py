@@ -3,7 +3,7 @@ import time
 import streamlit as st
 from rag import (
     DATA_DIR, list_ollama_models, split_models,
-    index_exists, index_is_stale, build_index, load_index, ask,
+    index_exists, index_is_stale, build_index, load_index, ask, rewrite_question
 )
 
 st.set_page_config(page_title="VaultQA", page_icon="", layout="wide")
@@ -38,6 +38,13 @@ with st.sidebar:
     k = st.slider("Chunks to retrieve (k)", 1, 8, 3)
     temperature = st.slider("Temperature", 0.0, 1.0, 0.0, 0.1)
     num_ctx = st.select_slider("Context window", [2048, 4096, 8192, 16384], value=8192)
+
+    use_memory = st.toggle(
+        "Chat memory", value=True,
+        help="Rewrites follow-up questions so they make sense on their own. "
+             "Adds one short LLM call per question.",
+    )    
+    
 
     max_distance = st.slider(
         "Relevance cutoff (lower = stricter)", 0.3, 2.0, 1.0, 0.05,
@@ -135,19 +142,36 @@ if question := st.chat_input("Ask a question about the documents"):
     with st.chat_message("assistant"):
         try:
             t0 = time.time()
-            stream, sources = ask(question, db, llm_model, k, temperature, num_ctx, max_distance)
+
+            # --- new: chat memory ---
+            standalone = question
+            if use_memory:
+                history = [
+                    m for m in st.session_state.messages[:-1]
+                    if not m["content"].startswith("Error:")
+                ]
+                with st.spinner("Understanding your question..."):
+                    standalone = rewrite_question(question, history, llm_model)
+                if standalone != question:
+                    st.caption(f"🔎 Searching for: *{standalone}*")
+
+            # --- changed: pass `standalone` instead of `question` ---
+            stream, sources = ask(standalone, db, llm_model, k, temperature, num_ctx, max_distance)
+
+            # --- unchanged from here ---
             answer = st.write_stream(stream)
             elapsed = time.time() - t0
             st.caption(f"⏱ {elapsed:.1f}s · {llm_model}")
-            with st.expander("Sources"):
-                for s in sources:
-                    page = s.metadata.get("page", 0) + 1
-                    label = f"{s.metadata.get('source')} (page {page})"
-                    score = s.metadata.get("score")
-                    if score is not None:
-                        label += f" · distance {score:.2f}"
-                    st.caption(label)
-                    st.text(s.page_content[:300] + "...")
+            if sources:
+                with st.expander("Sources"):
+                    for s in sources:
+                        page = s.metadata.get("page", 0) + 1
+                        label = f"{s.metadata.get('source')} (page {page})"
+                        score = s.metadata.get("score")
+                        if score is not None:
+                            label += f" · distance {score:.2f}"
+                        st.caption(label)
+                        st.text(s.page_content[:300] + "...")
         except Exception as e:
             answer = f"Error: {e}"
             st.error(answer)

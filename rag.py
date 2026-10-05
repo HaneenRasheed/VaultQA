@@ -24,6 +24,15 @@ Question: {question}
 
 Answer:""")
 
+REWRITE_PROMPT = ChatPromptTemplate.from_template("""Given the chat history and a follow-up question, rewrite the follow-up as one standalone question that makes sense without the history. Replace pronouns like "it", "that" or "they" with what they refer to. If the question is already standalone, return it unchanged. Output ONLY the question, nothing else.
+
+Chat history:
+{history}
+
+Follow-up question: {question}
+
+Standalone question:""")
+
 
 # ---------- Model discovery ----------
 def list_ollama_models():
@@ -101,6 +110,24 @@ def load_index(embed_model):
         allow_dangerous_deserialization=True,
         normalize_L2=True,
     )
+
+def rewrite_question(question, history, llm_model, max_turns=6):
+    """Turn a follow-up into a standalone question using recent chat history."""
+    if not history:
+        return question
+    recent = history[-max_turns:]
+    text = "\n".join(f"{m['role'].title()}: {m['content'][:500]}" for m in recent)
+    try:
+        llm = ChatOllama(model=llm_model, temperature=0, num_ctx=4096)
+        out = (REWRITE_PROMPT | llm).invoke(
+            {"history": text, "question": question}
+        ).content.strip()
+    except Exception:
+        return question                      # never block the answer
+    out = out.strip('"').split("\n")[0].strip()
+    if not out or len(out) > 3 * len(question) + 200:
+        return question                      # model rambled, so fall back
+    return out
 
 
 # ---------- Question answering ----------
