@@ -1,5 +1,6 @@
 import os
 import time
+from datetime import datetime 
 import streamlit as st
 from rag import (
     DATA_DIR, list_ollama_models, split_models,
@@ -34,6 +35,10 @@ with st.sidebar:
 
     llm_model = st.selectbox("Chat model", chat_models)
     embed_model = st.selectbox("Embedding model", embed_models)
+
+    if st.button("🔄 Refresh models", use_container_width=True):
+        st.rerun()   # rerunning the script re-reads the model list from Ollama
+    st.caption(f"{len(installed)} model(s) installed in Ollama")    
 
     k = st.slider("Chunks to retrieve (k)", 1, 8, 3)
     temperature = st.slider("Temperature", 0.0, 1.0, 0.0, 0.1)
@@ -110,6 +115,25 @@ with st.sidebar:
             st.rerun()
         except Exception as e:
             st.error(str(e))
+
+    msgs = st.session_state.get("messages", [])
+    if msgs:
+        now = datetime.now()
+        lines = [
+            "# VaultQA chat export",
+            f"*{now:%Y-%m-%d %H:%M} · chat model: {llm_model} · embeddings: {embed_model}*",
+            "",
+        ]
+        for m in msgs:
+            who = "You" if m["role"] == "user" else "Assistant"
+            lines.append(f"**{who}:** {m['content']}\n")
+        st.download_button(
+            "⬇️ Export chat",
+            "\n".join(lines),
+            file_name=f"chat_{now:%Y%m%d_%H%M}.md",
+            mime="text/markdown",
+            use_container_width=True,
+        )
 
     if st.button("🗑️ Clear chat", use_container_width=True):
         st.session_state.messages = []
